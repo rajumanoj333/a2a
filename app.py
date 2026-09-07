@@ -49,6 +49,9 @@ def _():
 
 @app.cell
 async def _(mo, prompt, run):
+    import os
+    from datetime import datetime
+
     from google.adk.agents import Agent, SequentialAgent
     from google.adk.runners import Runner
     from google.genai import types
