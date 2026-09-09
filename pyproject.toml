@@ -1,12 +1,14 @@
 [project]
-name = "marimo-google-adk-demo"
+name = "streamlit-google-adk-travel-demo"
 version = "0.1.0"
-description = "A simple three-agent Google ADK orchestration demo with Marimo"
+description = "A Google ADK multi-agent travel planner using GroqCloud and Streamlit"
 requires-python = ">=3.11"
 dependencies = [
-  "marimo>=0.15.0",
   "google-adk>=1.17.0",
+  "groq>=0.31.0",
+  "python-dotenv>=1.0.1",
+  "streamlit>=1.48.0",
 ]
 
-[tool.marimo]
-display_name = "Three minds. One answer."
+[tool.setuptools]
+py-modules = ["app", "travel_agents", "groq_adk_model"]
