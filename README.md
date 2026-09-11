@@ -42,3 +42,17 @@ streamlit run app.py
 ```
 
 The current tools return deterministic demo data. Replace those tool bodies with real travel APIs later without changing the agent boundaries.
+
+## Deploy on Streamlit Community Cloud
+
+Create a new app from the `dev` branch with `app.py` as the main file. Streamlit
+Cloud installs `requirements.txt` automatically. Add these values under the
+app's **Settings → Secrets**:
+
+```toml
+GROQ_API_KEY = "your_actual_groq_api_key"
+GROQ_MODEL = "openai/gpt-oss-20b"
+```
+
+Never commit `.env` or a real API key. The app reads local `.env` values during
+development and Streamlit Secrets in the hosted deployment.
