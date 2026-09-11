@@ -1,28 +1,58 @@
-# Three minds. One answer.
+# AI Trip Planner
 
-A small, easy-to-explain multi-agent demo using [Google ADK](https://google.github.io/adk-docs/) and [Marimo](https://github.com/marimo-team/marimo).
+A real Google ADK multi-agent demo using the official GroqCloud SDK and Streamlit.
 
-## What it demonstrates
+## Architecture
 
-1. **Coordinator** turns the user's prompt into a brief.
-2. **Specialist** completes the main task.
-3. **Reviewer** checks and returns the final answer.
+```text
+Streamlit
+   |
+ADK Orchestrator
+   | local ADK agent delegation
+   +--> Travel Agent --> search_places()
+   +--> Hotel Agent  --> search_hotels(), search_restaurants()
+   +--> Food Agent   --> search_restaurants()
+```
 
-The Marimo UI shows the final result and a tracking panel with the agents that ran. Without credentials, the app uses a clearly labeled preview mode so the UI can be demoed immediately.
+The specialist agents are local ADK sub-agents. The orchestrator delegates to them directly in one process, so there are no A2A servers, network ports, agent cards, or experimental A2A integration warnings. The tracking panel shows agent delegation, tool calls, tool results, and agent responses.
 
-## Run it
+## Run locally
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -e .
-marimo run app.py
+Copy-Item .env.example .env
 ```
 
-For live Gemini calls, copy `.env.example` to `.env` and set `GOOGLE_API_KEY`, or set the environment variable in your shell before launching. Google ADK's local Python setup supports Gemini API key authentication or Google Cloud credentials.
+Set your Groq key in `.env`:
 
-To edit the notebook:
+```env
+GROQ_API_KEY=your_actual_groq_api_key
+GROQ_MODEL=openai/gpt-oss-20b
+```
+
+`groq_adk_model.py` is the small compatibility adapter between ADK's model
+interface and the official Groq SDK. No LiteLLM, A2A, or OpenAI credentials are used.
+
+Then start Streamlit:
 
 ```powershell
-marimo edit app.py
+streamlit run app.py
 ```
+
+The current tools return deterministic demo data. Replace those tool bodies with real travel APIs later without changing the agent boundaries.
+
+## Deploy on Streamlit Community Cloud
+
+Create a new app from the `dev` branch with `app.py` as the main file. Streamlit
+Cloud installs `requirements.txt` automatically. Add these values under the
+app's **Settings → Secrets**:
+
+```toml
+GROQ_API_KEY = "your_actual_groq_api_key"
+GROQ_MODEL = "openai/gpt-oss-20b"
+```
+
+Never commit `.env` or a real API key. The app reads local `.env` values during
+development and Streamlit Secrets in the hosted deployment.

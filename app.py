@@ -1,183 +1,182 @@
-"""Three-agent Google ADK orchestration demo built with Marimo.
-
-Run with: marimo run app.py
-Edit with: marimo edit app.py
-"""
+"""Streamlit UI for a Google ADK multi-agent travel planner."""
 
 import asyncio
 import os
-from datetime import datetime
+import warnings
+from typing import Any
 
-import marimo
+warnings.filterwarnings(
+    "ignore",
+    message=r"\[EXPERIMENTAL\] feature FeatureName\.JSON_SCHEMA_FOR_FUNC_DECL.*",
+    category=UserWarning,
+)
 
-app = marimo.App(width="full")
+import streamlit as st
+from dotenv import load_dotenv
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
+from google.genai import types
 
-
-@app.cell
-def _():
-    import marimo as mo
-
-    mo.md(
-        """
-        <style>
-        :root { --marimo-heading-font: Inter, ui-sans-serif, system-ui, sans-serif; }
-        .hero { padding: 2rem 0 1.25rem; }
-        .hero h1 { font-size: 2.4rem; letter-spacing: -0.045em; margin-bottom: .5rem; }
-        .hero p { max-width: 46rem; color: #52606d; font-size: 1.05rem; }
-        .flow { background: #f4f7fb; border: 1px solid #d8e1ec; border-radius: 14px; padding: 1rem 1.25rem; }
-        .flow strong { color: #123b61; }
-        .note { color: #52606d; font-size: .92rem; }
-        </style>
-        <div class="hero">
-          <h1>Three minds. One answer.</h1>
-          <p>A tiny, observable Google ADK workflow: one agent plans, one solves, and one reviews.</p>
-        </div>
-        <div class="flow"><strong>Prompt</strong> &nbsp;→&nbsp; Coordinator &nbsp;→&nbsp; Specialist &nbsp;→&nbsp; Reviewer &nbsp;→&nbsp; <strong>Answer</strong></div>
-        """
-    )
-
-    prompt = mo.ui.text_area(
-        value="Explain why orchestration is useful in a multi-agent system.",
-        label="Give the team a task",
-        rows=5,
-        full_width=True,
-    )
-    run = mo.ui.run_button(label="Run the three-agent team")
-    mo.vstack([prompt, run])
-    return mo, prompt, run
+from travel_agents import build_agents
 
 
-@app.cell
-async def _(mo, prompt, run):
-    import os
-    from datetime import datetime
+load_dotenv()
+st.set_page_config(page_title="AI Trip Planner", page_icon="🧭", layout="wide")
 
-    from google.adk.agents import Agent, SequentialAgent
-    from google.adk.runners import Runner
-    from google.genai import types
-    from google.adk.sessions import InMemorySessionService
 
-    MODEL = os.getenv("GOOGLE_ADK_MODEL", "gemini-2.5-flash")
-
-    coordinator = Agent(
-        name="coordinator",
-        model=MODEL,
-        instruction=(
-            "You are the Coordinator. Read the user's task, clarify the goal internally, "
-            "and create a concise execution brief for the Specialist. Do not answer the "
-            "user yet. Keep the brief practical and include success criteria."
-        ),
-    )
-    specialist = Agent(
-        name="specialist",
-        model=MODEL,
-        instruction=(
-            "You are the Specialist. Use the Coordinator's brief from the shared workflow "
-            "context. Do the main work and produce a useful draft answer with examples. "
-            "Do not discuss the orchestration mechanics."
-        ),
-    )
-    reviewer = Agent(
-        name="reviewer",
-        model=MODEL,
-        instruction=(
-            "You are the Reviewer. Inspect the Specialist's draft and return the final answer. "
-            "Fix unclear wording, missing steps, or unsupported claims. Start directly with "
-            "the answer and keep it easy to understand."
-        ),
-    )
-    team = SequentialAgent(
-        name="three_agent_team",
-        sub_agents=[coordinator, specialist, reviewer],
-    )
-
-    async def run_adk_workflow(user_prompt: str):
-        """Run ADK and return the final text plus a trace of agent events."""
-        service = InMemorySessionService()
-        app_name = "marimo_adk_demo"
-        user_id = "demo_user"
-        session = await service.create_session(app_name=app_name, user_id=user_id)
-        runner = Runner(agent=team, app_name=app_name, session_service=service)
-        content = types.Content(role="user", parts=[types.Part(text=user_prompt)])
-        trace = []
-        final_text = ""
-        async for event in runner.run_async(
-            user_id=user_id, session_id=session.id, new_message=content
-        ):
-            author = getattr(event, "author", "workflow")
-            if author not in {item["agent"] for item in trace}:
-                trace.append(
-                    {
-                        "agent": author,
-                        "status": "completed",
-                        "time": datetime.now().strftime("%H:%M:%S"),
-                    }
-                )
-            if event.is_final_response() and event.content and event.content.parts:
-                final_text = event.content.parts[0].text or final_text
-        return final_text, trace
-
-    def demo_workflow(user_prompt: str):
-        """Credential-free preview for explaining the UI before connecting Gemini."""
-        return (
-            "Orchestration divides a larger task into clear responsibilities. The Coordinator "
-            "creates the plan, the Specialist does the focused work, and the Reviewer checks "
-            "the result. This makes the workflow easier to debug, explain, and extend.",
-            [
-                {"agent": "coordinator", "status": "completed", "time": "demo"},
-                {"agent": "specialist", "status": "completed", "time": "demo"},
-                {"agent": "reviewer", "status": "completed", "time": "demo"},
-            ],
-        )
-
-    if not run.value:
-        mo.stop(True)
-
-    use_demo = not os.getenv("GOOGLE_API_KEY") and not os.getenv("GOOGLE_GENAI_USE_VERTEXAI")
-    if use_demo:
-        answer, trace = demo_workflow(prompt.value)
-        mode_label = "Preview mode — add GOOGLE_API_KEY to call Gemini"
-    else:
+def load_streamlit_secrets() -> None:
+    """Make Streamlit Cloud secrets available to the direct Groq adapter."""
+    for name in ("GROQ_API_KEY", "GROQ_MODEL"):
+        if os.getenv(name):
+            continue
         try:
-            answer, trace = await run_adk_workflow(prompt.value)
-            mode_label = f"Live Google ADK • {MODEL}"
-        except Exception as exc:
-            answer, trace = demo_workflow(prompt.value)
-            mode_label = f"Preview fallback • {type(exc).__name__}"
-
-    return answer, mode_label, mo, trace
+            value = st.secrets.get(name)
+        except FileNotFoundError:
+            value = None
+        if value:
+            os.environ[name] = str(value)
 
 
-@app.cell
-def _(answer, mode_label, mo, trace):
-    rows = []
-    labels = {
-        "coordinator": ("Coordinator", "Turns the prompt into a plan"),
-        "specialist": ("Specialist", "Completes the main task"),
-        "reviewer": ("Reviewer", "Checks and finalizes the answer"),
-        "three_agent_team": ("Team", "Coordinates the workflow"),
-    }
-    for item in trace:
-        name, purpose = labels.get(item["agent"], (item["agent"].title(), "Workflow event"))
-        rows.append(f"**{name}**  ·  `{item['status']}`  ·  {purpose}  ·  {item['time']}")
+load_streamlit_secrets()
 
-    tracking = mo.md("\n\n".join(rows) if rows else "No agent events yet.")
-    mo.hstack(
-        [
-            mo.vstack(
-                [
-                    mo.md("### Final answer"),
-                    mo.md(answer),
-                    mo.md(f"<span class='note'>{mode_label}</span>"),
-                ],
-                gap=1,
-            ),
-            mo.vstack([mo.md("### Agent tracking"), tracking], gap=1),
-        ],
-        widths=[2, 1],
-        gap=2,
+
+def event_detail(event: Any) -> list[dict[str, str]]:
+    details: list[dict[str, str]] = []
+    author = getattr(event, "author", "workflow")
+    for call in event.get_function_calls():
+        if call.name == "transfer_to_agent":
+            details.append(
+                {
+                    "kind": "delegation",
+                    "agent": author,
+                    "detail": f"Agent delegation to {call.args or {}}",
+                }
+            )
+            continue
+        details.append(
+            {
+                "kind": "tool",
+                "agent": author,
+                "detail": f"{call.name}({call.args or {}})",
+            }
+        )
+    for response in event.get_function_responses():
+        if response.name == "transfer_to_agent":
+            details.append(
+                {
+                    "kind": "delegation",
+                    "agent": author,
+                    "detail": "Agent delegation completed",
+                }
+            )
+            continue
+        details.append(
+            {
+                "kind": "tool_result",
+                "agent": author,
+                "detail": f"{response.name} returned {response.response}",
+            }
+        )
+    metadata = getattr(event, "custom_metadata", {}) or {}
+    if any(key.startswith("adk:") for key in metadata):
+        details.append(
+            {
+                "kind": "delegation",
+                "agent": author,
+                "detail": "ADK agent event",
+            }
+        )
+    if author != "user" and event.content and event.content.parts:
+        text = " ".join(
+            part.text.strip()
+            for part in event.content.parts
+            if part.text and part.text.strip()
+        )
+        if text:
+            details.append(
+                {
+                    "kind": "agent",
+                    "agent": author,
+                    "detail": text,
+                }
+            )
+    if not details and author != "user":
+        details.append({"kind": "agent", "agent": author, "detail": "Agent event"})
+    return details
+
+
+async def run_workflow(prompt: str) -> tuple[str, list[dict[str, str]]]:
+    service = InMemorySessionService()
+    app_name = "adk_travel_planner"
+    user_id = "streamlit_user"
+    session = await service.create_session(app_name=app_name, user_id=user_id)
+    runner = Runner(
+        agent=build_agents(),
+        app_name=app_name,
+        session_service=service,
     )
+    content = types.Content(role="user", parts=[types.Part(text=prompt)])
+    trace: list[dict[str, str]] = [
+        {"kind": "orchestrator", "agent": "orchestrator", "detail": "Received user prompt"}
+    ]
+    final_text = ""
+    last_agent_text = ""
+    async for event in runner.run_async(
+        user_id=user_id, session_id=session.id, new_message=content
+    ):
+        trace.extend(event_detail(event))
+        if event.is_final_response() and event.content and event.content.parts:
+            text = " ".join(
+                part.text.strip()
+                for part in event.content.parts
+                if part.text and part.text.strip()
+            )
+            if text:
+                if event.author == "orchestrator":
+                    final_text = text
+                last_agent_text = text
+    if not final_text:
+        final_text = last_agent_text
+    return final_text, trace
+
+
+def main() -> None:
+    st.title("🧭 AI Trip Planner")
+    st.caption("Google ADK + GroqCloud + Streamlit")
+    st.info(
+        "The orchestrator delegates to local Travel, Hotel, and Food ADK agents. "
+        "Each specialist uses focused deterministic demo tools."
+    )
+    prompt = st.text_area(
+        "What would you like to plan?",
+        value="Find a hotel in Goa and restaurants within 2 km of the hotel.",
+        height=120,
+    )
+    if st.button("Plan my trip", type="primary", disabled=not prompt.strip()):
+        if not os.getenv("GROQ_API_KEY") or os.getenv("GROQ_API_KEY") == "your_groq_api_key":
+            st.error("Set a valid GROQ_API_KEY in .env before planning a trip.")
+            st.stop()
+        with st.spinner("Orchestrator is coordinating agents..."):
+            try:
+                answer, trace = asyncio.run(run_workflow(prompt))
+                if not answer.strip():
+                    raise RuntimeError(
+                        "The ADK workflow completed without a final response. "
+                        "Check the agent trace for the last completed handoff."
+                    )
+            except Exception as exc:
+                st.error(f"The ADK workflow failed: {type(exc).__name__}: {exc}")
+                st.stop()
+        st.subheader("Your plan")
+        st.markdown(answer)
+        with st.expander("Live agent and tool tracking", expanded=True):
+            for item in trace:
+                label = item["kind"].replace("_", " ").title()
+                if item["kind"] == "delegation":
+                    st.markdown(f"**Agent delegation** · `{item['agent']}` · {item['detail']}")
+                else:
+                    st.markdown(f"- **{label}** · `{item['agent']}` · {item['detail']}")
 
 
 if __name__ == "__main__":
-    app.run()
+    main()
