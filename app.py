@@ -23,6 +23,23 @@ from travel_agents import build_agents
 load_dotenv()
 st.set_page_config(page_title="AI Trip Planner", page_icon="🧭", layout="wide")
 
+
+def load_streamlit_secrets() -> None:
+    """Make Streamlit Cloud secrets available to the direct Groq adapter."""
+    for name in ("GROQ_API_KEY", "GROQ_MODEL"):
+        if os.getenv(name):
+            continue
+        try:
+            value = st.secrets.get(name)
+        except FileNotFoundError:
+            value = None
+        if value:
+            os.environ[name] = str(value)
+
+
+load_streamlit_secrets()
+
+
 def event_detail(event: Any) -> list[dict[str, str]]:
     details: list[dict[str, str]] = []
     author = getattr(event, "author", "workflow")
